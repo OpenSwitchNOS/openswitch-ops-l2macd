@@ -117,6 +117,8 @@ mactable_show (const char *mac_from, const char *mac)
             /* skip this mac entry as the from field is not matching with the requested */
             continue;
         }
+        else if (NULL == row->port)
+            continue;
         /* add this mac entry to hash */
         shash_add(&sorted_mac_addr, row->mac_addr, (void *)row);
     }
@@ -172,6 +174,8 @@ mactable_tunnel_show (const char *tunnel)
             /* skip the entries with different tunnel key */
             continue;
         }
+        if (NULL ==row->port)
+            continue;
         shash_add(&sorted_mac_addr, row->mac_addr, (void *)row);
     }
 
@@ -234,7 +238,8 @@ mactable_vlan_show(const char *vlan_list, const char *mac_from)
         while (list != NULL)
         {
             int vlan_id = atoi(list->value);
-            if (row->vlan == vlan_id)
+            if (row->port &&
+                row->vlan == vlan_id)
             {
                 shash_add(&sorted_mac_addr, row->mac_addr, (void *)row);
                 break;
@@ -306,7 +311,8 @@ mactable_port_show(const char *port_list, const char *mac_from)
         while (list != NULL)
         {
 
-            if ((strcmp(list->value, row->port->name)) == 0)
+            if (row->port &&
+                (strcmp(list->value, row->port->name)) == 0)
             {
                 shash_add(&sorted_mac_addr, row->mac_addr, (void *)row);
                 break;
