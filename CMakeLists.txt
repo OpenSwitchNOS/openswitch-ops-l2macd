@@ -1,4 +1,4 @@
-# Copyright (C) 2015 Hewlett-Packard Development Company, L.P.
+# Copyright (C) 2016 Hewlett-Packard Development Company, L.P.
 # All Rights Reserved.
 #
 #    Licensed under the Apache License, Version 2.0 (the "License"); you may
@@ -15,7 +15,35 @@
 
 cmake_minimum_required (VERSION 2.8)
 
-project ("l2macd")
+set (L2MACD ops-l2macd)
+project (${L2MACD})
+set (SRC_DIR src)
+set (INCL_DIR include)
 
-# Build cli shared libraries.
+# Define compile flags
+set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -std=gnu99 -Wall -Werror")
+
+# Rules to locate needed libraries
+include(FindPkgConfig)
+pkg_check_modules(OVSCOMMON REQUIRED libovscommon)
+pkg_check_modules(OVSDB REQUIRED libovsdb)
+
+include_directories (${PROJECT_BINARY_DIR} ${PROJECT_SOURCE_DIR}/${INCL_DIR}
+                     ${OVSCOMMON_INCLUDE_DIRS}
+)
+
+# Source files to build l2macd
+set (SOURCES ${SRC_DIR}/l2macd.c ${SRC_DIR}/l2macd_ovsdb_if.c)
+
+# Rules to build l2macd
+add_executable (${L2MACD} ${SOURCES})
+target_link_libraries (${L2MACD} ${OVSCOMMON_LIBRARIES}
+                       ${OVSDB_LIBRARIES}
+                       -lpthread -lrt)
+
+# Build ops-l2macd cli shared libraries.
 add_subdirectory(src/cli)
+
+# Rules to install l2macd binary in rootfs
+install(TARGETS ${L2MACD}
+    RUNTIME DESTINATION bin)
