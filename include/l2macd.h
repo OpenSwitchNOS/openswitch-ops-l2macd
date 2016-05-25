@@ -26,11 +26,11 @@
  *
  * ops-l2macd is responsible for managing L2 MAC entries stored
  * in OVSDB.  In OpenSwitch L2 MAC entries are learned from the ASIC
- * and populated to OVSDB by vswitchd daemon.There is no way to explicitly
+ * and populated to OVSDB by ops-switchd daemon.There is no way to explicitly
  * flush learned L2 MAC entires from the OVSDB based on the various modules
- * state changes, Instead of monitor various modules in the vswitchd context,
+ * state changes, Instead of monitor various modules in the ops-switchd context,
  * This l2macd daemon will montior configuration changes and flush mac entries
- * from the OVSDB and it informs vswitchd to flush those entries from the ASIC
+ * from the OVSDB and it informs ops-switchd to flush those entries from the ASIC
  * L2 MAC table
  *
  *
@@ -87,7 +87,6 @@
  *      Port:interfaces
  *      VLAN:name
  *      VLAN:id
- *      VLAN:admin
  *      VLAN:oper_state
  *  The following columns are WRITTEN by ops-l2macd:
  *      Port:mac_invalid
@@ -139,9 +138,9 @@ extern void l2macd_ovsdb_init(const char *db_path);
 
 /**************************************************************************//**
  * @details This function is called during ops-l2macd start up to initialize
- * the global l2 mac table hash map.
+ * the global internal cache map.
  *****************************************************************************/
-extern void l2macd_mac_table_init(void);
+extern void l2macd_cache_init(void);
 
 
 /**************************************************************************//**

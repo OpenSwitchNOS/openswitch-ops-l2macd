@@ -34,8 +34,10 @@
 #include <openvswitch/vlog.h>
 #include <hash.h>
 #include <shash.h>
+#include "hmap.h"
 #include "l2macd.h"
 #include "poll-loop.h"
+#include "util.h"
 #include "timeval.h"
 
 VLOG_DEFINE_THIS_MODULE(l2macd_ovsdb_if);
@@ -43,7 +45,6 @@ VLOG_DEFINE_THIS_MODULE(l2macd_ovsdb_if);
 struct vlan_data {
     struct hmap_node hmap_node;  /* In struct l2mac_table "vlans" hmap. */
     int vlan_id;                 /* VLAN ID */
-    bool admin_state;           /* VLAN admin status */
     bool op_state;              /* VLAN operational status */
 };
 
@@ -67,10 +68,16 @@ static int system_configured = false;
 static struct l2macd_data_cache *g_l2macd_cache = NULL;
 
 #define IS_CHANGED(x,y) (x != y)
-#define MAC_FLUSH_TRY_AGAIN_MSEC 100
 
-/* Create a connection to the OVSDB at db_path and create a DB cache
- * for this daemon. */
+/*-----------------------------------------------------------------------------
+ | Function: l2macd_ovsdb_init
+ | Responsibility: Create a connection to the OVSDB at db_path and create a DB cache
+ | Parameters:
+ |      db_path : OVSDB db path
+ | Return:
+ |      None
+     ------------------------------------------------------------------------------
+ */
 void
 l2macd_ovsdb_init(const char *db_path)
 {
@@ -111,61 +118,58 @@ l2macd_ovsdb_init(const char *db_path)
     /* Cache VLAN table columns. */
     ovsdb_idl_add_table(idl, &ovsrec_table_vlan);
     ovsdb_idl_add_column(idl, &ovsrec_vlan_col_id);
-    ovsdb_idl_add_column(idl, &ovsrec_vlan_col_admin);
     ovsdb_idl_add_column(idl, &ovsrec_vlan_col_oper_state);
     ovsdb_idl_add_column(idl, &ovsrec_vlan_col_macs_invalid);
 
     /* Track VLAN table columns. */
     ovsdb_idl_track_add_column(idl, &ovsrec_vlan_col_id);
-    ovsdb_idl_track_add_column(idl, &ovsrec_vlan_col_admin);
     ovsdb_idl_track_add_column(idl, &ovsrec_vlan_col_oper_state);
     ovsdb_idl_track_add_column(idl, &ovsrec_vlan_col_macs_invalid);
-
-    /* Cache MAC table columns. */
-    ovsdb_idl_add_table(idl, &ovsrec_table_mac);
-    ovsdb_idl_add_column(idl, &ovsrec_mac_col_bridge);
-    ovsdb_idl_add_column(idl, &ovsrec_mac_col_mac_addr);
-    ovsdb_idl_add_column(idl, &ovsrec_mac_col_tunnel_key);
-    ovsdb_idl_add_column(idl, &ovsrec_mac_col_vlan);
-    ovsdb_idl_add_column(idl, &ovsrec_mac_col_port);
-    ovsdb_idl_add_column(idl, &ovsrec_mac_col_from);
-    ovsdb_idl_add_column(idl, &ovsrec_mac_col_status);
-
-    /* Track MAC table columns. */
-    ovsdb_idl_track_add_column(idl, &ovsrec_mac_col_mac_addr);
-    ovsdb_idl_track_add_column(idl, &ovsrec_mac_col_bridge);
-    ovsdb_idl_track_add_column(idl, &ovsrec_mac_col_tunnel_key);
-    ovsdb_idl_track_add_column(idl, &ovsrec_mac_col_vlan);
-    ovsdb_idl_track_add_column(idl, &ovsrec_mac_col_port);
-    ovsdb_idl_track_add_column(idl, &ovsrec_mac_col_from);
-    ovsdb_idl_track_add_column(idl, &ovsrec_mac_col_status);
 } /* l2macd_ovsdb_init */
 
+/*-----------------------------------------------------------------------------
+ | Function: l2macd_ovsdb_init
+ | Responsibility: create a local cache to store ports data and vlan data
+ | Parameters:
+ |      None
+ | Return:
+ |      None
+     ------------------------------------------------------------------------------
+ */
 void
-l2macd_mac_table_init(void)
+l2macd_cache_init(void)
 {
     /* Allocate Memory */
     g_l2macd_cache = xmalloc(sizeof *g_l2macd_cache);
-
+    ovs_assert(g_l2macd_cache != NULL);
     hmap_init(&g_l2macd_cache->vlan_table);
     hmap_init(&g_l2macd_cache->port_table);
-}   /* l2macd_mactable_init */
+}   /* l2macd_cache_init */
 
+/*-----------------------------------------------------------------------------
+ | Function: l2macd_ovsdb_exit
+ | Responsibility: l2macd exit function
+ | Parameters:
+ |      None
+ | Return:
+ |      None
+     ------------------------------------------------------------------------------
+ */
 void
 l2macd_ovsdb_exit(void)
 {
-    struct port_data *iface, *next_iface;
+    struct port_data *port, *next_port;
     struct vlan_data *vlan, *next_vlan;
 
     /* Free port table. */
-    HMAP_FOR_EACH_SAFE (iface, next_iface, hmap_node,
+    HMAP_FOR_EACH_SAFE (port, next_port, hmap_node,
                         &g_l2macd_cache->port_table) {
-        free(iface);
+        free(port);
     }
 
     /* Free vlan table.*/
     HMAP_FOR_EACH_SAFE (vlan, next_vlan, hmap_node,
-                        &g_l2macd_cache->port_table) {
+                        &g_l2macd_cache->vlan_table) {
         free(vlan);
     }
 
@@ -175,72 +179,53 @@ l2macd_ovsdb_exit(void)
     ovsdb_idl_destroy(idl);
 } /* l2macd_ovsdb_exit */
 
-static int
-mac_flush_by_port(const struct ovsrec_port *port_row, bool port_delete)
+
+/*-----------------------------------------------------------------------------
+ | Function: mac_flush_by_port
+ | Responsibility: Trigger mac flush on specific port by setting mac_invalid column
+ | Parameters:
+ |      port_row: port row in the idl
+ | Return:
+ |      None
+     ------------------------------------------------------------------------------
+ */
+static void
+mac_flush_by_port(const struct ovsrec_port *port_row)
 {
-    const struct ovsrec_mac *mac_row = NULL;
     struct ovsdb_idl_txn *txn = NULL;
     enum ovsdb_idl_txn_status status = TXN_SUCCESS;
-    bool mac_invalid = true, retry = false;
-    int rc = 0;
+    bool mac_invalid = true;
 
     txn = ovsdb_idl_txn_create(idl);
 
-    /* TODO: Use OVSDB index based search to flush.mac entries */
-    OVSREC_MAC_FOR_EACH(mac_row, idl)   {
-        ovs_assert(mac_row->port);
-        if (mac_row->port
-            && !strcmp(mac_row->port->name, port_row->name)
-            && !strcmp(mac_row->from, OVSREC_MAC_FROM_LEARNING))   {
-            VLOG_DBG("%s: %s entry deleted %s \n",
-                      __FUNCTION__,
-                      port_row->name,
-                      mac_row->mac_addr);
-            /* Delete the MAC entries from the OVSDB. */
-            ovsrec_mac_delete(mac_row);
-            rc++;
-        }
-    }
+    /* Set MAC flush request on this port */
+    ovsrec_port_set_macs_invalid(port_row, &mac_invalid, 1);
+    ovsrec_port_verify_macs_invalid(port_row);
 
-    /*  Port row is deleted? */
-    if  (port_delete == false)  {
-        /* Set MAC flush request on this port, If no other requests pending.*/
-        if (port_row->n_macs_invalid == 0
-            || (port_row->macs_invalid
-                && port_row->macs_invalid[0] == false))   {
-            ovsrec_port_set_macs_invalid(port_row, &mac_invalid, 1);
-            ovsrec_port_verify_macs_invalid(port_row);
-            rc++;
-            ovsdb_idl_txn_add_comment(txn, "l2macd-%s-flush", port_row->name);
-        }   else {
-            /* Already some requests pending try again. */
-            retry = true;
-            rc = 0;
-        }
-    }
-
-    if (rc) {
-        status = ovsdb_idl_txn_commit_block(txn);
-        if (status == TXN_TRY_AGAIN)    {
-            ovsdb_idl_txn_abort(txn);
-            retry = true;
-        }
-    }
-
-    if (retry) {
-        /* Register timer event after 100ms to try again.*/
-        poll_timer_wait_until(time_msec() + MAC_FLUSH_TRY_AGAIN_MSEC);
-        rc = -1;
-        VLOG_DBG("%s: flush port %s Try Again \n",
-                  __FUNCTION__, port_row->name);
-    }
+    ovsdb_idl_txn_add_comment(txn, "l2macd-%s-flush", port_row->name);
+    status = ovsdb_idl_txn_commit_block(txn);
 
     VLOG_DBG("%s: flush %s \n", __FUNCTION__, port_row->name);
 
+    if (status != TXN_SUCCESS)    {
+        ovsdb_idl_txn_abort(txn);
+        VLOG_ERR("%s: txn_commit status %d \n",
+                 __FUNCTION__, status);
+    }
+
     ovsdb_idl_txn_destroy(txn);
-    return rc;
+
 }/* mac_flush_by_port */
 
+/*-----------------------------------------------------------------------------
+ | Function: check_system_iface
+ | Responsibility: Checks interface is system type
+ | Parameters:
+ |      port_row: port row in the idl
+ | Return:
+ |      bool : if the interface type is system, return true
+     ------------------------------------------------------------------------------
+ */
 static bool
 check_system_iface(const struct ovsrec_port *port)
 {
@@ -257,6 +242,16 @@ check_system_iface(const struct ovsrec_port *port)
     return rc;
 }   /* check_system_iface */
 
+/*-----------------------------------------------------------------------------
+ | Function: port_lookup
+ | Responsibility: port lookup in the global cache
+ | Parameters:
+ |      port_hmap: ports hash map
+ |      name: port name
+ | Return:
+ |      port_data: return the port_data, if the specified port name exists
+     ------------------------------------------------------------------------------
+ */
 static struct port_data *
 port_lookup(const struct hmap* port_hmap, const char *name)
 {
@@ -272,11 +267,23 @@ port_lookup(const struct hmap* port_hmap, const char *name)
     return NULL;
 }   /* port_lookup */
 
+
+/*-----------------------------------------------------------------------------
+ | Function: update_port_state
+ | Responsibility: Update the port details in the global cache and flush the mac
+ |                      if port state is down
+ | Parameters:
+ |      port_row: port row in the idl
+ |      port_data: port_data cache
+ | Return:
+ |      None
+     ------------------------------------------------------------------------------
+ */
 static void
-update_port_data(const struct ovsrec_port *port_row,
+update_port_state(const struct ovsrec_port *port_row,
                      struct port_data *port_data)
 {
-    int i = 0, rc = 0;
+    int i = 0;
     bool link_up = false;
     bool flush = false;
 
@@ -300,18 +307,22 @@ update_port_data(const struct ovsrec_port *port_row,
 
     /* Flush only link down cases */
     if (flush && !link_up){
-         rc = mac_flush_by_port(port_row, false);
+        mac_flush_by_port(port_row);
     }
 
-    /* Update state changes only If OVSDB transaction completed successfully
-     * If the status is TXN_TRY_AGAIN, will be retried after 100ms, so skip the
-     * update state changes locally..
-    */
-    if  (rc >= 0) {
-        port_data->link_state = link_up;
-    }
-}/* update_port_data */
+    /* Update link status */
+    port_data->link_state = link_up;
+}/* update_port_state */
 
+/*-----------------------------------------------------------------------------
+ | Function: update_port
+ | Responsibility: Create/Update the port details in the global cache
+ | Parameters:
+ |      port_row: port row in the idl
+ | Return:
+ |      None
+     ------------------------------------------------------------------------------
+ */
 static void
 update_port(const struct ovsrec_port *port_row)
 {
@@ -335,92 +346,88 @@ update_port(const struct ovsrec_port *port_row)
         port_data->link_state= false;
     }
 
-    update_port_data(port_row, port_data);
+    update_port_state(port_row, port_data);
 
     VLOG_DBG("%s: %s added count %zu", __FUNCTION__,
               port_data->name, hmap_count(&g_l2macd_cache->port_table));
-} /* add_new_port */
+} /* update_port */
 
+/*-----------------------------------------------------------------------------
+ | Function: del_old_port
+ | Responsibility: Delete the port from the global cache
+ | Parameters:
+ |      port_row: port row in the idl
+ | Return:
+ |      None
+ |Note : Don't access port_row, Track looses deleted port_row information except UUID
+     ------------------------------------------------------------------------------
+ */
 static void
 del_old_port(const struct ovsrec_port *port_row)
 {
-    struct port_data *old_port = NULL;
+    struct shash all_ports;
+    const struct ovsrec_port *ports = NULL;
+    struct port_data *port_data, *next_port_data;
 
-    if (!(old_port = port_lookup(&g_l2macd_cache->port_table,
-                     port_row->name)))  {
-        VLOG_DBG("%s: name not found %s, hmap count %zu",
-                 __FUNCTION__,
-                 port_row->name,
-                 hmap_count(&g_l2macd_cache->port_table));
-        return;
+    shash_init(&all_ports);
+    OVSREC_PORT_FOR_EACH(ports, idl)    {
+        const char *name = ports->name;
+        if (!shash_add_once(&all_ports, name, ports)) {
+            VLOG_WARN("port %s specified twice ", name);
+        }
     }
 
-    mac_flush_by_port(port_row, true);
+    HMAP_FOR_EACH_SAFE (port_data, next_port_data, hmap_node,
+                        &g_l2macd_cache->port_table) {
+        /* Check port is deleted */
+        if (shash_find_data(&all_ports, port_data->name) == NULL)   {
+            VLOG_DBG("%s: %s ports count %zu", __FUNCTION__,
+                      port_data->name,
+                      hmap_count(&g_l2macd_cache->port_table));
+            hmap_remove(&g_l2macd_cache->port_table, &port_data->hmap_node);
+            free(port_data->name);
+            free(port_data);
+        }
+    }
 
-    hmap_remove(&g_l2macd_cache->port_table, &old_port->hmap_node);
-    free(old_port->name);
-    free(old_port);
-
-    VLOG_DBG("%s: %s count %zu", __FUNCTION__,
-              port_row->name, hmap_count(&g_l2macd_cache->port_table));
+    /* Destroy ports hash */
+    shash_destroy(&all_ports);
 } /* del_old_port */
 
+/*-----------------------------------------------------------------------------
+ | Function: update_port_cache
+ | Responsibility: Track the port changes and update cache
+ | Parameters:
+ |      None
+ | Return:
+ |      None
+     ------------------------------------------------------------------------------
+ */
 static void
 update_port_cache(void)
 {
     const struct ovsrec_port *port_row;
-    const struct ovsrec_interface *interface_row;
-    int track = 0, i = 0;
-    unsigned int local_idl_seqno = 0;
-    bool modified = false;
-
-    local_idl_seqno = ovsdb_idl_get_seqno(idl);
+    int i = 0;
 
     /* Track all the ports changes in the DB. */
     OVSREC_PORT_FOR_EACH_TRACKED(port_row, idl) {
         /* Add new ports to the cache. */
         if(ovsrec_port_row_get_seqno(port_row, OVSDB_IDL_CHANGE_INSERT)
-                           >= local_idl_seqno)  {
+                           >= idl_seqno)  {
             update_port(port_row);
-            track++;
         }
 
         /* Delete ports from the cache. */
         if(ovsrec_port_row_get_seqno(port_row, OVSDB_IDL_CHANGE_DELETE)
-                   >= local_idl_seqno)  {
+                   >= idl_seqno)  {
             del_old_port(port_row);
-            track++;
         }
 
         /* Update modified ports to the cache. */
         if(ovsrec_port_row_get_seqno(port_row, OVSDB_IDL_CHANGE_MODIFY)
-                   >= local_idl_seqno)  {
+                   >= idl_seqno)  {
             update_port(port_row);
-            track++;
         }
-    }
-
-    port_row = ovsrec_port_first(idl);
-    interface_row = ovsrec_interface_first(idl);
-
-    /* Check any port table changes pending. */
-    if (port_row
-        && (OVSREC_IDL_ANY_TABLE_ROWS_MODIFIED(port_row, idl_seqno)
-            || OVSREC_IDL_ANY_TABLE_ROWS_DELETED(port_row, idl_seqno)
-            || OVSREC_IDL_ANY_TABLE_ROWS_INSERTED(port_row, idl_seqno))) {
-        modified = true;
-    }
-
-    /* Handle Interface table changes. */
-    if (interface_row
-        && (OVSREC_IDL_ANY_TABLE_ROWS_MODIFIED(interface_row, idl_seqno)
-            || OVSREC_IDL_ANY_TABLE_ROWS_DELETED(interface_row, idl_seqno)
-            || OVSREC_IDL_ANY_TABLE_ROWS_INSERTED(interface_row, idl_seqno))) {
-        modified = true;
-    }
-
-    if (modified == false)  {
-        return;
     }
 
     /* Update port table cache for interface row changes also. */
@@ -433,109 +440,92 @@ update_port_cache(void)
             }
         }
     }
+
 } /* update_port_cache */
 
-static int
-mac_flush_by_vlan(const struct ovsrec_vlan *vlan_row, bool vlan_delete)
+/*-----------------------------------------------------------------------------
+ | Function: mac_flush_by_vlan
+ | Responsibility: Triggers the mac flush on the spcified vlan by setting mac_invalid column
+ | Parameters:
+ |      vlan_row: VLAN row in the IDL
+ | Return:
+ |      None
+     ------------------------------------------------------------------------------
+ */
+static void
+mac_flush_by_vlan(const struct ovsrec_vlan *vlan_row)
 {
-    const struct ovsrec_mac *mac_row = NULL;
     struct ovsdb_idl_txn *txn;
-    bool mac_invalid = true, retry = false;
-    int rc = 0;
+    bool mac_invalid = true;
     enum ovsdb_idl_txn_status status = TXN_SUCCESS;
 
     txn = ovsdb_idl_txn_create(idl);
 
-    /* TODO: Use OVSDB index based search to flush. */
-    OVSREC_MAC_FOR_EACH(mac_row, idl)   {
-        if (mac_row->vlan == vlan_row->id &&
-            !strcmp(mac_row->from, OVSREC_MAC_FROM_LEARNING))   {
-            /* Delete the MAC entries from the OVSDB */
-            VLOG_DBG("%s: entry deleted %s \n", __FUNCTION__,
-                     mac_row->mac_addr);
-            ovsrec_mac_delete(mac_row);
-            rc++;
-        }
-    }
+    /* Set MAC flush request on this VLAN. */
+    ovsrec_vlan_set_macs_invalid(vlan_row, &mac_invalid, 1);
+    ovsrec_vlan_verify_macs_invalid(vlan_row);
+    ovsdb_idl_txn_add_comment(txn, "l2macd-%ld-flush", vlan_row->id);
 
-    if (vlan_delete == false)   {
-        /* Set MAC flush request on this VLAN, If no other requests pending. */
-        if (vlan_row->n_macs_invalid == 0
-            || (vlan_row->macs_invalid
-                && vlan_row->macs_invalid[0] == false)) {
-            ovsrec_vlan_set_macs_invalid(vlan_row, &mac_invalid, 1);
-            ovsrec_vlan_verify_macs_invalid(vlan_row);
-            ovsdb_idl_txn_add_comment(txn, "l2macd-%ld-flush", vlan_row->id);
-            rc++;
-        }  else {
-            /* Already some requests pending. */
-            retry = true;
-            rc = 0;
-        }
-    }
+    status = ovsdb_idl_txn_commit_block(txn);
+    VLOG_DBG("%s: vlan %ld status %d \n", __FUNCTION__,
+             vlan_row->id, status);
 
-    if (rc) {
-        status = ovsdb_idl_txn_commit_block(txn);
-        /* Retry the transaction. */
-        if (status == TXN_TRY_AGAIN)    {
-            ovsdb_idl_txn_abort(txn);
-            retry = true;
-            VLOG_DBG("%s: vlan %ld Try Again \n", __FUNCTION__,
-                     vlan_row->id);
-        }
-    }
-
-    if (retry) {
-        /* Register timer event after 100ms to try again.*/
-        poll_timer_wait_until(time_msec() + MAC_FLUSH_TRY_AGAIN_MSEC);
-        rc = -1;
-        VLOG_DBG("%s: Retry already pending requests %ld \n",
-                 __FUNCTION__, vlan_row->id);
+    if (status != TXN_SUCCESS)    {
+        ovsdb_idl_txn_abort(txn);
+        VLOG_ERR("%s: txn_commit status %d \n",
+                 __FUNCTION__, status);
     }
 
     ovsdb_idl_txn_destroy(txn);
-    return rc;
 }
 
+/*-----------------------------------------------------------------------------
+ | Function: update_vlan_state
+ | Responsibility: Update the VLAN details in the global cache and flush the mac
+ |                      if VLAN state is down
+ | Parameters:
+ |      row: VLAN row in the idl
+ |      vlan_data: vlan_data cache
+ | Return:
+ |      None
+     ------------------------------------------------------------------------------
+ */
 static void
-update_vlan_data(const struct ovsrec_vlan *row, struct vlan_data *vlan_ptr)
+update_vlan_state(const struct ovsrec_vlan *row, struct vlan_data *vlan_ptr)
 {
-    bool admin_up = false, op_up = false;
-    bool flush = false;
-    int rc = 0;
+    bool prev_op_up = false, op_up = false;
 
     vlan_ptr->vlan_id = (int) row->id;
-
-    /* Update admin_state to unknown. */
-    if (row->admin &&
-        !strcmp(OVSREC_VLAN_ADMIN_UP, row->admin)) {
-        admin_up = true;
-    }
+    prev_op_up = vlan_ptr->op_state;
 
     /* Update oper_state to unknown. */
     if (row->oper_state &&
-        !strcmp(OVSREC_VLAN_OPER_STATE_UP, row->admin)) {
+        !strcmp(OVSREC_VLAN_OPER_STATE_UP, row->oper_state)) {
         op_up = true;
     }
 
-    flush = IS_CHANGED(vlan_ptr->admin_state, admin_up);
-    flush = IS_CHANGED(vlan_ptr->op_state, op_up);
-
-    /* Flush only admin/operational down cases */
-    if (flush && (!admin_up || !op_up))  {
-        rc = mac_flush_by_vlan(row, false);
+    /* Flush only VLAN operational down cases */
+    if (OVSREC_IDL_IS_COLUMN_MODIFIED(ovsrec_vlan_col_oper_state,
+                                      idl_seqno)
+        && prev_op_up == true && op_up == false) {
+        mac_flush_by_vlan(row);
     }
 
-    /* Update state changes only If OVSDB transaction completed successfully
-     * If the status is TXN_TRY_AGAIN, will be retried after 100ms, so skip the
-     * update state changes locally..
-    */
-    if  (rc >= 0) {
-        vlan_ptr->admin_state = admin_up;
-        vlan_ptr->op_state = op_up;
-    }
-} /* update_vlan_data */
+    /* Update the VLAN oper_state */
+    vlan_ptr->op_state = op_up;
+} /* update_vlan_state */
 
+
+/*-----------------------------------------------------------------------------
+ | Function: vlan_lookup_by_vid
+ | Responsibility: VLAN lookup in the global cache
+ | Parameters:
+ |      vlan_hmap: VLANs hash map
+ |      vid: VLAN ID
+ | Return:
+ |      vlan_data: return the vlan_data, if the specified vlan exists
+     ------------------------------------------------------------------------------
+ */
 static inline struct vlan_data *
 vlan_lookup_by_vid(const struct hmap* vlan_hmap, int vid)
 {
@@ -549,6 +539,15 @@ vlan_lookup_by_vid(const struct hmap* vlan_hmap, int vid)
     return NULL;
 }
 
+/*-----------------------------------------------------------------------------
+ | Function: update_vlan
+ | Responsibility: Create/Update the VLAN details in the global cache
+ | Parameters:
+ |      vlan_row: VLAN row in the idl
+ | Return:
+ |      None
+     ------------------------------------------------------------------------------
+ */
 static void
 update_vlan(const struct ovsrec_vlan *vlan_row)
 {
@@ -560,105 +559,111 @@ update_vlan(const struct ovsrec_vlan *vlan_row)
         /* Allocate structure to save state information for this VLAN. */
         new_vlan = xzalloc(sizeof(struct vlan_data));
         new_vlan->vlan_id = (int) vlan_row->id;
-        new_vlan->admin_state= false;
         new_vlan->op_state= false;
         hmap_insert(&g_l2macd_cache->vlan_table, &new_vlan->hmap_node,
                         hash_int(vlan_row->id, 0));
     }
 
     /* Update VLAN configuration into internal format. */
-    update_vlan_data(vlan_row, new_vlan);
+    update_vlan_state(vlan_row, new_vlan);
 
     VLOG_DBG("%s: %d, hmap count %zu", __FUNCTION__, (int)vlan_row->id,
              hmap_count(&g_l2macd_cache->vlan_table));
-
 } /* add_new_vlan */
 
+/*-----------------------------------------------------------------------------
+ | Function: del_old_vlan
+ | Responsibility: Delete the VLAN from the global cache
+ | Parameters:
+ |      vlan_row: vlan row in the idl
+ | Return:
+ |      None
+ |Note : Don't access vlan_row, Track looses deleted vlan_row information except UUID
+     ------------------------------------------------------------------------------
+ */
 static void
-del_old_vlan(const struct ovsrec_vlan *vlan_row)
+del_old_vlan(const struct ovsrec_vlan *row)
 {
-    struct vlan_data *old_vlan = NULL;
+    const struct ovsrec_vlan *vlan_row;
+    struct vlan_data *vlan, *vlan_next;
+    bool vlan_found = false;
 
-    old_vlan = vlan_lookup_by_vid(&g_l2macd_cache->vlan_table, vlan_row->id);
+    /* Check all the VLANs present in the DB. */
+    HMAP_FOR_EACH_SAFE (vlan, vlan_next, hmap_node,
+                        &g_l2macd_cache->vlan_table) {
 
-    if (!old_vlan) {
-        VLOG_ERR("%s: %d, hmap count %zu",
-                 __FUNCTION__,
-                 (int)vlan_row->id,
-                 hmap_count(&g_l2macd_cache->vlan_table));
-        return;
+        vlan_found = false;
+        OVSREC_VLAN_FOR_EACH(vlan_row, idl) {
+            if ((vlan->vlan_id == vlan_row->id)) {
+                vlan_found = true;
+                break;
+            }
+        }
+
+        /* Handle deleted vlans */
+        if (vlan_found == false)   {
+            VLOG_DBG("%s: vlan_id %d hmap count %zu", __FUNCTION__,
+                      vlan->vlan_id,
+                      hmap_count(&g_l2macd_cache->vlan_table));
+            hmap_remove(&g_l2macd_cache->vlan_table,
+                        &vlan->hmap_node);
+            /* Free the VLAN data */
+            free(vlan);
+
+        }
     }
 
-    mac_flush_by_vlan(vlan_row, true);
-
-    hmap_remove(&g_l2macd_cache->vlan_table, &old_vlan->hmap_node);
-
-    /* Free the VLAN data */
-    free(old_vlan);
-
-    VLOG_DBG("%s: %d, hmap count %zu", __FUNCTION__, (int)vlan_row->id,
+    VLOG_DBG("%s: hmap count %zu", __FUNCTION__,
               hmap_count(&g_l2macd_cache->vlan_table));
 } /* del_old_vlan */
 
+/*-----------------------------------------------------------------------------
+ | Function: update_vlan_cache
+ | Responsibility: Track the VLAN table changes and update cache
+ | Parameters:
+ |      None
+ | Return:
+ |      None
+     ------------------------------------------------------------------------------
+ */
 static void
 update_vlan_cache(void)
 {
     const struct ovsrec_vlan *vlan_row;
-    int track = 0;
-    unsigned int local_idl_seqno = 0;
-
-    local_idl_seqno = ovsdb_idl_get_seqno(idl);
 
     /* Track all the VLAN changes in the DB. */
     OVSREC_VLAN_FOR_EACH_TRACKED(vlan_row, idl) {
         /* Add new VLAN to the cache */
         if(ovsrec_vlan_row_get_seqno(vlan_row, OVSDB_IDL_CHANGE_INSERT)
-                           >= local_idl_seqno)  {
+                           >= idl_seqno)  {
             update_vlan(vlan_row);
-            track++;
         }
 
         /* Update modified VLAN to the cache */
         if(ovsrec_vlan_row_get_seqno(vlan_row, OVSDB_IDL_CHANGE_MODIFY)
-                   >= local_idl_seqno)  {
+                   >= idl_seqno)  {
             update_vlan(vlan_row);
-            track++;
         }
 
         /* Delete VLAN from the cache */
         if(ovsrec_vlan_row_get_seqno(vlan_row, OVSDB_IDL_CHANGE_DELETE)
-                   >= local_idl_seqno)  {
+                   >= idl_seqno)  {
             del_old_vlan(vlan_row);
-            track++;
-        }
-    }
-
-    vlan_row = ovsrec_vlan_first(idl);
-
-    /* Make sure its not a VLAN related changes. */
-    if (vlan_row
-        && (!OVSREC_IDL_ANY_TABLE_ROWS_MODIFIED(vlan_row, idl_seqno))
-        && (!OVSREC_IDL_ANY_TABLE_ROWS_DELETED(vlan_row, idl_seqno))
-        && (!OVSREC_IDL_ANY_TABLE_ROWS_INSERTED(vlan_row, idl_seqno)))
-    {
-        return;
-    }
-
-    if (track) {
-        return;
-    }
-
-    /* Update VLAN table cache */
-    OVSREC_VLAN_FOR_EACH(vlan_row, idl) {
-        if (OVSREC_IDL_IS_ROW_INSERTED(vlan_row, idl_seqno) ||
-            OVSREC_IDL_IS_ROW_MODIFIED(vlan_row, idl_seqno)) {
-            update_vlan(vlan_row);
         }
     }
 
     return;
 } /* update_vlan_cache */
 
+/*-----------------------------------------------------------------------------
+ | Function: l2macd_reconfigure
+ | Responsibility: Monitor IDL changes
+ | Parameters:
+ |      None
+ | Return:
+ |      None
+     ------------------------------------------------------------------------------
+ */
 static void
 l2macd_reconfigure(void)
 {
@@ -682,6 +687,15 @@ l2macd_reconfigure(void)
     ovsdb_idl_track_clear(idl);
 } /* l2macd_reconfigure */
 
+/*-----------------------------------------------------------------------------
+ | Function: l2macd_chk_for_system_configured
+ | Responsibility: Checks system configuration state
+ | Parameters:
+ |      None
+ | Return:
+ |      None
+     ------------------------------------------------------------------------------
+ */
 static inline void
 l2macd_chk_for_system_configured(void)
 {

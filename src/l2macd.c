@@ -24,9 +24,9 @@
  *   1. During start up, read Interface, Port and VLAN related configuration
  *      data
  *
- *   2. Dynamically based on configuration changes flushes L2 MAC entries from OVSDB
+ *   2. Dynamically based on configuration changes initiates L2 MAC entries from OVSDB
  *
- *   3. Updates vswitchd to flush the L2 MAC table entries from the ASIC by updating the
+ *   3. Updates ops-switchd to flush the L2 MAC table entries from the ASIC by updating the
  *      Mac_flush_table.
  *
  ****************************************************************************/
@@ -61,6 +61,18 @@ VLOG_DEFINE_THIS_MODULE(ops_l2macd);
 
 #define L2MACD_PID_FILE        "/var/run/openvswitch/ops-l2macd.pid"
 
+/*-----------------------------------------------------------------------------
+ | Function: l2macd_unixctl_dump
+ | Responsibility: To dump the l2macd
+ | Parameters:
+ |      conn : unix socket to reply
+ |      argc : number of arguments
+ |      argv : arguments list
+ |      aux : auxiliary parameters
+ | Return:
+ |      None
+ ------------------------------------------------------------------------------
+ */
 static void
 l2macd_unixctl_dump(struct unixctl_conn *conn, int argc OVS_UNUSED,
                    const char *argv[] OVS_UNUSED, void *aux OVS_UNUSED)
@@ -74,20 +86,38 @@ l2macd_unixctl_dump(struct unixctl_conn *conn, int argc OVS_UNUSED,
 
 } /* l2macd_unixctl_dump */
 
+/*-----------------------------------------------------------------------------
+ | Function: l2macd_init
+ | Responsibility: l2macd initialize function
+ | Parameters:
+ |      db_path : ovsdb path
+ | Return:
+ |      None
+ ------------------------------------------------------------------------------
+ */
 static void
 l2macd_init(const char *db_path)
 {
     /* Initialize IDL through a new connection to the DB. */
     l2macd_ovsdb_init(db_path);
 
-    /* Initialize the global hash MAC table */
-    l2macd_mac_table_init();
+    /* Initialize the global Internal cache table */
+    l2macd_cache_init();
 
     /* Register ovs-appctl commands for this daemon. */
     unixctl_command_register("ops-l2macd/dump", "", 0, 0, l2macd_unixctl_dump, NULL);
 
 } /* l2macd_init */
 
+/*-----------------------------------------------------------------------------
+ | Function: l2macd_exit
+ | Responsibility: l2macd exit function
+ | Parameters:
+ |      None
+ | Return:
+ |      None
+ ------------------------------------------------------------------------------
+ */
 static void
 l2macd_exit(void)
 {
@@ -111,6 +141,18 @@ usage(void)
     exit(EXIT_SUCCESS);
 
 } /* usage */
+
+/*-----------------------------------------------------------------------------
+ | Function: parse_options
+ | Responsibility: parsing the input arguments
+ | Parameters:
+ |      argc : arguments count
+ |      argv : arguments list
+ |      unixctl_pathp : db path
+ | Return:
+ |      pointer
+ ------------------------------------------------------------------------------
+ */
 
 static char *
 parse_options(int argc, char *argv[], char **unixctl_pathp)

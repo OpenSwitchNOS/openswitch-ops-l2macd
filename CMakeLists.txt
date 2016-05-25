@@ -15,7 +15,7 @@
 
 cmake_minimum_required (VERSION 2.8)
 
-set (L2MACD hpe-l2macd)
+set (L2MACD ops-l2macd)
 project (${L2MACD})
 set (SRC_DIR src)
 set (INCL_DIR include)
