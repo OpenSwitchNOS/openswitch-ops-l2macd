@@ -69,7 +69,7 @@ print_mactable(const struct shash_node **nodes, int count)
     for (idx = 0; idx < count; idx++)
     {
         row = (const struct ovsrec_mac *)nodes[idx]->data;
-        snprintf(vlan_id, 5, "%ld", row->vlan);
+        snprintf(vlan_id, 5, "%ld", (int64_t)ops_mac_get_vlan(row));
         DISPLAY_MACTABLE_ROW(vty, row, vlan_id);
     }
 
@@ -234,7 +234,7 @@ mactable_vlan_show(const char *vlan_list, const char *mac_from)
         while (list != NULL)
         {
             int vlan_id = atoi(list->value);
-            if (row->vlan == vlan_id)
+            if (ops_mac_get_vlan(row) == vlan_id)
             {
                 shash_add(&sorted_mac_addr, row->mac_addr, (void *)row);
                 break;
