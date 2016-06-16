@@ -102,6 +102,8 @@ l2macd_ovsdb_init(const char *db_path)
     ovsdb_idl_add_column(idl, &ovsrec_port_col_vlan_mode);
     ovsdb_idl_add_column(idl, &ovsrec_port_col_tag);
     ovsdb_idl_add_column(idl, &ovsrec_port_col_trunks);
+    ovsdb_idl_add_column(idl, &ovsrec_port_col_vlan_tag);
+    ovsdb_idl_add_column(idl, &ovsrec_port_col_vlan_trunks);
     ovsdb_idl_add_column(idl, &ovsrec_port_col_interfaces);
     ovsdb_idl_add_column(idl, &ovsrec_port_col_macs_invalid);
     ovsdb_idl_add_column(idl, &ovsrec_port_col_macs_invalid_on_vlans);
@@ -111,6 +113,8 @@ l2macd_ovsdb_init(const char *db_path)
     ovsdb_idl_track_add_column(idl, &ovsrec_port_col_vlan_mode);
     ovsdb_idl_track_add_column(idl, &ovsrec_port_col_tag);
     ovsdb_idl_track_add_column(idl, &ovsrec_port_col_trunks);
+    ovsdb_idl_track_add_column(idl, &ovsrec_port_col_vlan_tag);
+    ovsdb_idl_track_add_column(idl, &ovsrec_port_col_vlan_trunks);
     ovsdb_idl_track_add_column(idl, &ovsrec_port_col_interfaces);
     ovsdb_idl_track_add_column(idl, &ovsrec_port_col_macs_invalid);
     ovsdb_idl_track_add_column(idl, &ovsrec_port_col_macs_invalid_on_vlans);
