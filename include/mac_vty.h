@@ -28,6 +28,8 @@
 #ifndef _MAC_VTY_H
 #define _MAC_VTY_H
 
+#include "ops-utils.h"
+
 #define MAC_AGE_TIME     300
 #define MAX_VLAN_ID_SIZE 5
 

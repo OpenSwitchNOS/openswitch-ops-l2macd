@@ -70,7 +70,7 @@ print_mactable(const struct shash_node **nodes, int count)
     for (idx = 0; idx < count; idx++)
     {
         row = (const struct ovsrec_mac *)nodes[idx]->data;
-        snprintf(vlan_id, 5, "%ld", row->vlan);
+        snprintf(vlan_id, 5, "%ld", (int64_t)ops_mac_get_vlan(row));
         DISPLAY_MACTABLE_ROW(vty, row, vlan_id);
     }
 
@@ -247,7 +247,7 @@ mactable_vlan_show(const char *vlan_list, const char *mac_from, bool show_count)
         {
             int vlan_id = atoi(list->value);
             if (row->port &&
-                row->vlan == vlan_id)
+                ops_mac_get_vlan(row) == vlan_id)
             {
                 shash_add(&sorted_mac_addr, row->mac_addr, (void *)row);
                 break;
@@ -516,6 +516,7 @@ mac_ovsdb_init(void)
 
     ovsdb_idl_add_table(idl, &ovsrec_table_mac);
     ovsdb_idl_add_column(idl, &ovsrec_mac_col_vlan);
+    ovsdb_idl_add_column(idl, &ovsrec_mac_col_mac_vlan);
     ovsdb_idl_add_column(idl, &ovsrec_mac_col_mac_addr);
     ovsdb_idl_add_column(idl, &ovsrec_mac_col_from);
     ovsdb_idl_add_column(idl, &ovsrec_mac_col_port);
@@ -528,6 +529,8 @@ mac_ovsdb_init(void)
         ovsdb_idl_index_add_column(index, &ovsrec_mac_col_mac_addr,
                                           OVSDB_INDEX_ASC, ovsrec_mac_index_mac_addr_cmp);
         ovsdb_idl_index_add_column(index, &ovsrec_mac_col_vlan,
+                                          OVSDB_INDEX_ASC, NULL);
+        ovsdb_idl_index_add_column(index, &ovsrec_mac_col_mac_vlan,
                                           OVSDB_INDEX_ASC, NULL);
         ovsdb_idl_index_add_column(index, &ovsrec_mac_col_from,
                                           OVSDB_INDEX_ASC, ovsrec_mac_index_from_cmp);
