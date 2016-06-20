@@ -515,7 +515,6 @@ mac_ovsdb_init(void)
     struct ovsdb_idl_index *index = NULL;
 
     ovsdb_idl_add_table(idl, &ovsrec_table_mac);
-    ovsdb_idl_add_column(idl, &ovsrec_mac_col_vlan);
     ovsdb_idl_add_column(idl, &ovsrec_mac_col_mac_vlan);
     ovsdb_idl_add_column(idl, &ovsrec_mac_col_mac_addr);
     ovsdb_idl_add_column(idl, &ovsrec_mac_col_from);
@@ -528,10 +527,6 @@ mac_ovsdb_init(void)
         /* add indexing columns */
         ovsdb_idl_index_add_column(index, &ovsrec_mac_col_mac_addr,
                                           OVSDB_INDEX_ASC, ovsrec_mac_index_mac_addr_cmp);
-        ovsdb_idl_index_add_column(index, &ovsrec_mac_col_vlan,
-                                          OVSDB_INDEX_ASC, NULL);
-        ovsdb_idl_index_add_column(index, &ovsrec_mac_col_mac_vlan,
-                                          OVSDB_INDEX_ASC, NULL);
         ovsdb_idl_index_add_column(index, &ovsrec_mac_col_from,
                                           OVSDB_INDEX_ASC, ovsrec_mac_index_from_cmp);
     }

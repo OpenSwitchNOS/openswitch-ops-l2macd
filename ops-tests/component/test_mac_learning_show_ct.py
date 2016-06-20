@@ -19,6 +19,7 @@
 """
 OpenSwitch Test for L2 mac related configurations.
 """
+import pytest
 from pytest import mark
 
 TOPOLOGY = """
@@ -51,6 +52,14 @@ def test_show_mac(topology):
     # Configure IP and bring UP switch 1 interfaces
     with sw1.libs.vtysh.ConfigInterface('3') as ctx:
         ctx.no_routing()
+        ctx.no_shutdown()
+
+    # Configure vlan 2
+    with sw1.libs.vtysh.ConfigVlan('2') as ctx:
+        ctx.no_shutdown()
+
+    # Configure vlan 3
+    with sw1.libs.vtysh.ConfigVlan('3') as ctx:
         ctx.no_shutdown()
 
     mac_entry = sw1.libs.vtysh.show_mac_address_table()
