@@ -15,7 +15,6 @@
 #    under the License.
 #
 ##########################################################################
-from pytest import mark
 
 """
 OpenSwitch Test for L2 mac related configurations.
@@ -32,7 +31,6 @@ TOPOLOGY = """
 [type=openswitch name="OpenSwitch 1"] sw1
 """
 
-@mark.skipif(True, reason="waiting for add-mac to get checked-in")
 def test_show_mac(topology):
     sw1 = topology.get('sw1')
     assert sw1 is not None
@@ -56,40 +54,40 @@ def test_show_mac(topology):
     assert not mac_entry
 
     # add mac address
-    sw1("ovs-vsctl add-mac :00:00:00:00:00:01 1 1 dynamic", shell="bash")
-    sw1("ovs-vsctl add-mac :00:00:00:00:00:02 2 2 dynamic", shell="bash")
-    sw1("ovs-vsctl add-mac :00:00:00:00:00:03 3 3 dynamic", shell="bash")
-    sw1("ovs-vsctl add-mac :00:00:00:00:00:04 1 1 dynamic", shell="bash")
-    sw1("ovs-vsctl add-mac :00:00:00:00:00:05 2 1 dynamic", shell="bash")
-    sw1("ovs-vsctl add-mac :00:00:00:00:00:06 1 3 dynamic", shell="bash")
-    sw1("ovs-vsctl add-mac :00:00:00:00:00:07 1 2 dynamic", shell="bash")
+    sw1("ovs-vsctl add-mac 00:00:00:00:00:01 1 1 dynamic", shell="bash")
+    sw1("ovs-vsctl add-mac 00:00:00:00:00:02 2 2 dynamic", shell="bash")
+    sw1("ovs-vsctl add-mac 00:00:00:00:00:03 3 3 dynamic", shell="bash")
+    sw1("ovs-vsctl add-mac 00:00:00:00:00:04 1 1 dynamic", shell="bash")
+    sw1("ovs-vsctl add-mac 00:00:00:00:00:05 2 1 dynamic", shell="bash")
+    sw1("ovs-vsctl add-mac 00:00:00:00:00:06 1 3 dynamic", shell="bash")
+    sw1("ovs-vsctl add-mac 00:00:00:00:00:07 1 2 dynamic", shell="bash")
 
     mac_entry = sw1.libs.vtysh.show_mac_address_table()
     assert mac_entry is not None
-    assert mac_entry[':00:00:00:00:00:01']['vlan_id'] == '1'
-    assert mac_entry[':00:00:00:00:00:01']['port'] == '1'
-    assert mac_entry[':00:00:00:00:00:01']['from'] == 'dynamic'
+    assert mac_entry['00:00:00:00:00:01']['vlan_id'] == '1'
+    assert mac_entry['00:00:00:00:00:01']['port'] == '1'
+    assert mac_entry['00:00:00:00:00:01']['from'] == 'dynamic'
 
-    assert mac_entry[':00:00:00:00:00:02']['vlan_id'] == '2'
-    assert mac_entry[':00:00:00:00:00:02']['port'] == '2'
-    assert mac_entry[':00:00:00:00:00:02']['from'] == 'dynamic'
+    assert mac_entry['00:00:00:00:00:02']['vlan_id'] == '2'
+    assert mac_entry['00:00:00:00:00:02']['port'] == '2'
+    assert mac_entry['00:00:00:00:00:02']['from'] == 'dynamic'
 
-    assert mac_entry[':00:00:00:00:00:03']['vlan_id'] == '3'
-    assert mac_entry[':00:00:00:00:00:03']['port'] == '3'
-    assert mac_entry[':00:00:00:00:00:03']['from'] == 'dynamic'
+    assert mac_entry['00:00:00:00:00:03']['vlan_id'] == '3'
+    assert mac_entry['00:00:00:00:00:03']['port'] == '3'
+    assert mac_entry['00:00:00:00:00:03']['from'] == 'dynamic'
 
-    assert mac_entry[':00:00:00:00:00:04']['vlan_id'] == '1'
-    assert mac_entry[':00:00:00:00:00:04']['port'] == '1'
-    assert mac_entry[':00:00:00:00:00:04']['from'] == 'dynamic'
+    assert mac_entry['00:00:00:00:00:04']['vlan_id'] == '1'
+    assert mac_entry['00:00:00:00:00:04']['port'] == '1'
+    assert mac_entry['00:00:00:00:00:04']['from'] == 'dynamic'
 
-    assert mac_entry[':00:00:00:00:00:05']['vlan_id'] == '2'
-    assert mac_entry[':00:00:00:00:00:05']['port'] == '1'
-    assert mac_entry[':00:00:00:00:00:05']['from'] == 'dynamic'
+    assert mac_entry['00:00:00:00:00:05']['vlan_id'] == '2'
+    assert mac_entry['00:00:00:00:00:05']['port'] == '1'
+    assert mac_entry['00:00:00:00:00:05']['from'] == 'dynamic'
 
-    assert mac_entry[':00:00:00:00:00:06']['vlan_id'] == '1'
-    assert mac_entry[':00:00:00:00:00:06']['port'] == '3'
-    assert mac_entry[':00:00:00:00:00:06']['from'] == 'dynamic'
+    assert mac_entry['00:00:00:00:00:06']['vlan_id'] == '1'
+    assert mac_entry['00:00:00:00:00:06']['port'] == '3'
+    assert mac_entry['00:00:00:00:00:06']['from'] == 'dynamic'
 
-    assert mac_entry[':00:00:00:00:00:07']['vlan_id'] == '1'
-    assert mac_entry[':00:00:00:00:00:07']['port'] == '2'
-    assert mac_entry[':00:00:00:00:00:07']['from'] == 'dynamic'
+    assert mac_entry['00:00:00:00:00:07']['vlan_id'] == '1'
+    assert mac_entry['00:00:00:00:00:07']['port'] == '2'
+    assert mac_entry['00:00:00:00:00:07']['from'] == 'dynamic'
