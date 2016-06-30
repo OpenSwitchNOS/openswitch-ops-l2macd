@@ -47,6 +47,7 @@
 VLOG_DEFINE_THIS_MODULE (vtysh_mac_cli);
 
 extern struct ovsdb_idl *idl;
+static struct ovsdb_idl_index_cursor cursor;
 
 /*-----------------------------------------------------------------------------
  | Function: print_mactable
@@ -69,10 +70,43 @@ print_mactable(const struct shash_node **nodes, int count)
     for (idx = 0; idx < count; idx++)
     {
         row = (const struct ovsrec_mac *)nodes[idx]->data;
-        snprintf(vlan_id, 5, "%ld", row->vlan);
+        snprintf(vlan_id, 5, "%ld", (int64_t)ops_mac_get_vlan(row));
         DISPLAY_MACTABLE_ROW(vty, row, vlan_id);
     }
 
+}
+/*-----------------------------------------------------------------------------
+ | Function: mactable_count_show
+ | Responsibility: Display the number of mac entries in the mac table
+ | Parameters:
+ |      None
+
+ | Return:
+ |      CMD_SUCCESS - Command executed successfully.
+ ------------------------------------------------------------------------------
+*/
+static int
+mactable_count_show ()
+{
+    const struct ovsrec_mac *row = NULL;
+    int count = 0;
+
+    ovsdb_idl_run (idl);
+
+    row = ovsrec_mac_first (idl);
+    if (!row)
+    {
+        /* no mac entries in the mac table */
+        vty_out (vty, "No MAC entries found.%s", VTY_NEWLINE);
+        return CMD_SUCCESS;
+    }
+
+    OVSREC_MAC_FOR_EACH_BYINDEX (row, &cursor)
+    {
+        count++;
+    }
+    vty_out(vty, "Number of MAC addresses %d\n",count);
+    return CMD_SUCCESS;
 }
 
 /*-----------------------------------------------------------------------------
@@ -105,9 +139,11 @@ mactable_show (const char *mac_from, const char *mac)
 
     shash_init(&sorted_mac_addr);
 
-    OVSREC_MAC_FOR_EACH (row, idl)
+    OVSREC_MAC_FOR_EACH_BYINDEX (row, &cursor)
     {
-        if ((mac != NULL) && (strcmp(row->mac_addr, mac)) != 0)
+        if (NULL == row->port)
+            continue;
+        else if ((mac != NULL) && (strcmp(row->mac_addr, mac)) != 0)
         {
            /* skip this mac entry as this is not matching with the requested mac address */
             continue;
@@ -165,13 +201,15 @@ mactable_tunnel_show (const char *tunnel)
 
     shash_init(&sorted_mac_addr);
 
-    OVSREC_MAC_FOR_EACH (row, idl)
+    OVSREC_MAC_FOR_EACH_BYINDEX (row, &cursor)
     {
         if (tunnel_key != (*(row->tunnel_key)))
         {
             /* skip the entries with different tunnel key */
             continue;
         }
+        if (NULL == row->port)
+            continue;
         shash_add(&sorted_mac_addr, row->mac_addr, (void *)row);
     }
 
@@ -224,7 +262,7 @@ mactable_vlan_show(const char *vlan_list, const char *mac_from)
 
     shash_init(&sorted_mac_addr);
 
-    OVSREC_MAC_FOR_EACH (row, idl)
+    OVSREC_MAC_FOR_EACH_BYINDEX (row, &cursor)
     {
         if (mac_from != NULL && ((strcmp(row->from, mac_from) != 0)))
         {
@@ -234,7 +272,8 @@ mactable_vlan_show(const char *vlan_list, const char *mac_from)
         while (list != NULL)
         {
             int vlan_id = atoi(list->value);
-            if (row->vlan == vlan_id)
+            if (row->port &&
+                ops_mac_get_vlan(row) == vlan_id)
             {
                 shash_add(&sorted_mac_addr, row->mac_addr, (void *)row);
                 break;
@@ -296,7 +335,7 @@ mactable_port_show(const char *port_list, const char *mac_from)
 
     shash_init(&sorted_mac_addr);
 
-    OVSREC_MAC_FOR_EACH (row, idl)
+    OVSREC_MAC_FOR_EACH_BYINDEX (row, &cursor)
     {
         if (mac_from != NULL && ((strcmp(row->from, mac_from) != 0)))
         {
@@ -306,7 +345,8 @@ mactable_port_show(const char *port_list, const char *mac_from)
         while (list != NULL)
         {
 
-            if ((strcmp(list->value, row->port->name)) == 0)
+            if (row->port &&
+                (strcmp(list->value, row->port->name)) == 0)
             {
                 shash_add(&sorted_mac_addr, row->mac_addr, (void *)row);
                 break;
@@ -418,6 +458,16 @@ DEFUN (cli_mactable_address_show,
     return mactable_show(NULL, argv[0]);
 }
 
+DEFUN (cli_mactable_count_show,
+       cli_mactable_count_show_cmd,
+       "show mac-address-table count",
+       SHOW_STR
+       SHOW_MAC_TABLE_STR
+       "Number of MAC addresses\n")
+{
+    return mactable_count_show();
+}
+
 /* will be enabled after tunnel support is added */
 #ifdef HW_VTEP_SUPPORT
 DEFUN (cli_mactable_tunnel_show,
@@ -443,12 +493,35 @@ DEFUN (cli_mactable_tunnel_show,
 static void
 mac_ovsdb_init(void)
 {
+    struct ovsdb_idl_index *index = NULL;
+
     ovsdb_idl_add_table(idl, &ovsrec_table_mac);
     ovsdb_idl_add_column(idl, &ovsrec_mac_col_vlan);
+    ovsdb_idl_add_column(idl, &ovsrec_mac_col_mac_vlan);
     ovsdb_idl_add_column(idl, &ovsrec_mac_col_mac_addr);
     ovsdb_idl_add_column(idl, &ovsrec_mac_col_from);
     ovsdb_idl_add_column(idl, &ovsrec_mac_col_port);
     ovsdb_idl_add_column(idl, &ovsrec_mac_col_tunnel_key);
+
+    /* Initialize Compound Indexes */
+    index = ovsdb_idl_create_index(idl, &ovsrec_table_mac, "by_macVidFrom");
+    if (index) {
+        /* add indexing columns */
+        ovsdb_idl_index_add_column(index, &ovsrec_mac_col_mac_addr,
+                                          OVSDB_INDEX_ASC, ovsrec_mac_index_mac_addr_cmp);
+        ovsdb_idl_index_add_column(index, &ovsrec_mac_col_vlan,
+                                          OVSDB_INDEX_ASC, NULL);
+        ovsdb_idl_index_add_column(index, &ovsrec_mac_col_mac_vlan,
+                                          OVSDB_INDEX_ASC, NULL);
+        ovsdb_idl_index_add_column(index, &ovsrec_mac_col_from,
+                                          OVSDB_INDEX_ASC, ovsrec_mac_index_from_cmp);
+    }
+    else {
+        VLOG_ERR ("%s: index creation failed", __FUNCTION__);
+        return;
+    }
+    ovsdb_idl_initialize_cursor(idl, &ovsrec_table_mac, "by_macVidFrom", &cursor);
+
     return;
 }
 
@@ -485,6 +558,7 @@ void cli_post_init(void)
     install_element (ENABLE_NODE, &cli_mactable_from_show_cmd);
     install_element (ENABLE_NODE, &cli_mactable_from_vlan_show_cmd);
     install_element (ENABLE_NODE, &cli_mactable_from_port_show_cmd);
+    install_element (ENABLE_NODE, &cli_mactable_count_show_cmd);
 #ifdef HW_VTEP_SUPPORT
     install_element (ENABLE_NODE, &cli_mactable_tunnel_show_cmd);
 #endif
