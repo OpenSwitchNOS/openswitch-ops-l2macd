@@ -431,24 +431,25 @@ update_port_cache(void)
 {
     const struct ovsrec_port *port_row = NULL;
     int i = 0;
+    unsigned int new_idl_seqno = ovsdb_idl_get_seqno(idl);
 
     /* Track all the ports changes in the DB. */
     OVSREC_PORT_FOR_EACH_TRACKED(port_row, idl) {
         /* Add new ports to the cache. */
         if(ovsrec_port_row_get_seqno(port_row, OVSDB_IDL_CHANGE_INSERT)
-                           >= idl_seqno)  {
+                           > new_idl_seqno)  {
             update_port(port_row);
         }
 
         /* Delete ports from the cache. */
         if(ovsrec_port_row_get_seqno(port_row, OVSDB_IDL_CHANGE_DELETE)
-                   >= idl_seqno)  {
+                   > new_idl_seqno)  {
             del_old_port();
         }
 
         /* Update modified ports to the cache. */
         if(ovsrec_port_row_get_seqno(port_row, OVSDB_IDL_CHANGE_MODIFY)
-                   >= idl_seqno)  {
+                   > new_idl_seqno)  {
             update_port(port_row);
         }
     }
@@ -670,24 +671,25 @@ static void
 update_vlan_cache(void)
 {
     const struct ovsrec_vlan *vlan_row;
+    unsigned int new_idl_seqno = ovsdb_idl_get_seqno(idl);
 
     /* Track all the VLAN changes in the DB. */
     OVSREC_VLAN_FOR_EACH_TRACKED(vlan_row, idl) {
         /* Add new VLAN to the cache */
         if(ovsrec_vlan_row_get_seqno(vlan_row, OVSDB_IDL_CHANGE_INSERT)
-                           >= idl_seqno)  {
+                           > new_idl_seqno)  {
             update_vlan(vlan_row);
         }
 
         /* Update modified VLAN to the cache */
         if(ovsrec_vlan_row_get_seqno(vlan_row, OVSDB_IDL_CHANGE_MODIFY)
-                   >= idl_seqno)  {
+                           > new_idl_seqno)  {
             update_vlan(vlan_row);
         }
 
         /* Delete VLAN from the cache */
         if(ovsrec_vlan_row_get_seqno(vlan_row, OVSDB_IDL_CHANGE_DELETE)
-                   >= idl_seqno)  {
+                           > new_idl_seqno)  {
             del_old_vlan();
         }
     }
