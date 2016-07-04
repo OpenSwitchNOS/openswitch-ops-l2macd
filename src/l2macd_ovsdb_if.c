@@ -108,17 +108,6 @@ l2macd_ovsdb_init(const char *db_path)
     ovsdb_idl_add_column(idl, &ovsrec_port_col_macs_invalid);
     ovsdb_idl_add_column(idl, &ovsrec_port_col_macs_invalid_on_vlans);
 
-    /* Track port table columns. */
-    ovsdb_idl_track_add_column(idl, &ovsrec_port_col_name);
-    ovsdb_idl_track_add_column(idl, &ovsrec_port_col_vlan_mode);
-    ovsdb_idl_track_add_column(idl, &ovsrec_port_col_tag);
-    ovsdb_idl_track_add_column(idl, &ovsrec_port_col_trunks);
-    ovsdb_idl_track_add_column(idl, &ovsrec_port_col_vlan_tag);
-    ovsdb_idl_track_add_column(idl, &ovsrec_port_col_vlan_trunks);
-    ovsdb_idl_track_add_column(idl, &ovsrec_port_col_interfaces);
-    ovsdb_idl_track_add_column(idl, &ovsrec_port_col_macs_invalid);
-    ovsdb_idl_track_add_column(idl, &ovsrec_port_col_macs_invalid_on_vlans);
-
     /* Cache VLAN table columns. */
     ovsdb_idl_add_table(idl, &ovsrec_table_vlan);
     ovsdb_idl_add_column(idl, &ovsrec_vlan_col_id);
@@ -245,9 +234,9 @@ check_system_iface(const struct ovsrec_port *port)
     }
 
     for (i = 0; i < port->n_interfaces; i++) {
-        const char *type = port->interfaces[i]->type;
-        if (!strncmp(type, OVSREC_INTERFACE_TYPE_SYSTEM,
-                     strlen(OVSREC_INTERFACE_TYPE_SYSTEM))) {
+        if ((port->interfaces[i]) &&
+            (!strncmp(port->interfaces[i]->type, OVSREC_INTERFACE_TYPE_SYSTEM,
+                     strlen(OVSREC_INTERFACE_TYPE_SYSTEM)))) {
             rc = true;
         }
     }
@@ -433,22 +422,19 @@ update_port_cache(void)
     int i = 0;
 
     /* Track all the ports changes in the DB. */
-    OVSREC_PORT_FOR_EACH_TRACKED(port_row, idl) {
+    OVSREC_PORT_FOR_EACH(port_row, idl) {
         /* Add new ports to the cache. */
-        if(ovsrec_port_row_get_seqno(port_row, OVSDB_IDL_CHANGE_INSERT)
-                           >= idl_seqno)  {
+        if(OVSREC_IDL_IS_ROW_INSERTED(port_row, idl_seqno))  {
             update_port(port_row);
         }
 
         /* Delete ports from the cache. */
-        if(ovsrec_port_row_get_seqno(port_row, OVSDB_IDL_CHANGE_DELETE)
-                   >= idl_seqno)  {
+        if(OVSREC_IDL_ANY_TABLE_ROWS_DELETED(port_row, idl_seqno))  {
             del_old_port();
         }
 
         /* Update modified ports to the cache. */
-        if(ovsrec_port_row_get_seqno(port_row, OVSDB_IDL_CHANGE_MODIFY)
-                   >= idl_seqno)  {
+        if (OVSREC_IDL_IS_ROW_MODIFIED(port_row, idl_seqno)) {
             update_port(port_row);
         }
     }
