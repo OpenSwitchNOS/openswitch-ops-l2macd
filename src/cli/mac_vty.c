@@ -504,15 +504,11 @@ mac_ovsdb_init(void)
     ovsdb_idl_add_column(idl, &ovsrec_mac_col_tunnel_key);
 
     /* Initialize Compound Indexes */
-    index = ovsdb_idl_create_index(idl, &ovsrec_table_mac, "by_macVidFrom");
+    index = ovsdb_idl_create_index(idl, &ovsrec_table_mac, "by_macFrom");
     if (index) {
         /* add indexing columns */
         ovsdb_idl_index_add_column(index, &ovsrec_mac_col_mac_addr,
                                           OVSDB_INDEX_ASC, ovsrec_mac_index_mac_addr_cmp);
-        ovsdb_idl_index_add_column(index, &ovsrec_mac_col_vlan,
-                                          OVSDB_INDEX_ASC, NULL);
-        ovsdb_idl_index_add_column(index, &ovsrec_mac_col_mac_vlan,
-                                          OVSDB_INDEX_ASC, NULL);
         ovsdb_idl_index_add_column(index, &ovsrec_mac_col_from,
                                           OVSDB_INDEX_ASC, ovsrec_mac_index_from_cmp);
     }
