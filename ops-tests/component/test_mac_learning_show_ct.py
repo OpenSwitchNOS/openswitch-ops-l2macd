@@ -19,7 +19,6 @@
 """
 OpenSwitch Test for L2 mac related configurations.
 """
-import pytest
 from pytest import mark
 
 TOPOLOGY = """
@@ -33,7 +32,6 @@ TOPOLOGY = """
 [type=openswitch name="OpenSwitch 1"] sw1
 """
 
-@pytest.mark.skipif(True, reason="Disabling")
 @mark.gate
 def test_show_mac(topology):
     sw1 = topology.get('sw1')
