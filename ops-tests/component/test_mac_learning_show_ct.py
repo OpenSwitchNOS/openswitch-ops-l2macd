@@ -33,7 +33,7 @@ TOPOLOGY = """
 [type=openswitch name="OpenSwitch 1"] sw1
 """
 
-@pytest.mark.skipif(True, reason="Disabling")
+#@pytest.mark.skipif(True, reason="Disabling")
 @mark.gate
 def test_show_mac(topology):
     sw1 = topology.get('sw1')
