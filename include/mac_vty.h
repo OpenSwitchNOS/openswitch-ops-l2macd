@@ -41,21 +41,24 @@
 #define SHOW_MAC_ADDR_STR   "Show a specific MAC address\n"
 #define MAC_VLAN_STR        "List of VLANs [e.g. 2,3-10]\n"
 #define MAC_PORT_STR        "List of ports [e.g. 2-6,lag1]\n"
+#define MAC_COUNT_STR       "Number of MAC addresses\n"
 
-
-#define DISPLAY_MACTABLE_HEADER(vty, count) \
-  vty_out (vty, "MAC age-time            : %d seconds%s", MAC_AGE_TIME, VTY_NEWLINE); \
-  vty_out (vty, "Number of MAC addresses : %d%s", count, VTY_NEWLINE); \
-  if (count) { \
-  vty_out (vty, "\n%-20s %-8s %-10s %-10s%s", "MAC Address", "VLAN", "Type", "Port", VTY_NEWLINE); \
-  vty_out (vty, "--------------------------------------------------%s", VTY_NEWLINE);   \
-  } \
+#define DISPLAY_MACTABLE_HEADER(vty, count)\
+    vty_out (vty, "MAC age-time            : %d seconds%s", MAC_AGE_TIME, VTY_NEWLINE);\
+    vty_out (vty, "Number of MAC addresses : %d%s", count, VTY_NEWLINE);\
+    if (count) {\
+        vty_out (vty, "\n%-20s %-8s %-10s %-10s%s", "MAC Address", "VLAN", "Type", "Port", VTY_NEWLINE);\
+        vty_out (vty, "--------------------------------------------------%s", VTY_NEWLINE);\
+    }\
 
 #define DISPLAY_MACTABLE_ROW(vty, row, vlan_id) \
-      vty_out(vty, "%-20s ", row->mac_addr);\
-      vty_out(vty, "%-8s ",  vlan_id);\
-      vty_out(vty, "%-10s ", row->from); \
-      vty_out(vty, "%-10s ", row->port->name);\
-      vty_out(vty, "%s", VTY_NEWLINE);\
+    vty_out(vty, "%-20s ", row->mac_addr);\
+    vty_out(vty, "%-8s ",  vlan_id);\
+    vty_out(vty, "%-10s ", row->from); \
+    vty_out(vty, "%-10s ", row->port->name);\
+    vty_out(vty, "%s", VTY_NEWLINE);\
+
+#define DISPLAY_MACTABLE_COUNT(count)\
+    vty_out (vty, "Number of MAC addresses : %d%s", count, VTY_NEWLINE);\
 
 #endif
