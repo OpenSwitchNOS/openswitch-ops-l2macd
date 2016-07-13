@@ -75,39 +75,6 @@ print_mactable(const struct shash_node **nodes, int count)
     }
 
 }
-/*-----------------------------------------------------------------------------
- | Function: mactable_count_show
- | Responsibility: Display the number of mac entries in the mac table
- | Parameters:
- |      None
-
- | Return:
- |      CMD_SUCCESS - Command executed successfully.
- ------------------------------------------------------------------------------
-*/
-static int
-mactable_count_show ()
-{
-    const struct ovsrec_mac *row = NULL;
-    int count = 0;
-
-    ovsdb_idl_run (idl);
-
-    row = ovsrec_mac_first (idl);
-    if (!row)
-    {
-        /* no mac entries in the mac table */
-        vty_out (vty, "No MAC entries found.%s", VTY_NEWLINE);
-        return CMD_SUCCESS;
-    }
-
-    OVSREC_MAC_FOR_EACH_BYINDEX (row, &cursor)
-    {
-        count++;
-    }
-    vty_out(vty, "Number of MAC addresses %d\n",count);
-    return CMD_SUCCESS;
-}
 
 /*-----------------------------------------------------------------------------
  | Function: mactable_show
@@ -120,7 +87,7 @@ mactable_count_show ()
  ------------------------------------------------------------------------------
  */
 static int
-mactable_show (const char *mac_from, const char *mac)
+mactable_show (const char *mac_from, const char *mac, bool show_count)
 {
     const struct ovsrec_mac *row = NULL;
     struct shash sorted_mac_addr;
@@ -161,7 +128,14 @@ mactable_show (const char *mac_from, const char *mac)
     nodes = shash_sort(&sorted_mac_addr);
     count = shash_count(&sorted_mac_addr);
 
-    print_mactable(nodes, count);
+    if (show_count)
+    {
+        DISPLAY_MACTABLE_COUNT(count);
+    }
+    else
+    {
+        print_mactable(nodes, count);
+    }
     shash_destroy(&sorted_mac_addr);
     if (nodes != NULL)
         free(nodes);
@@ -236,7 +210,7 @@ mactable_tunnel_show (const char *tunnel)
  ------------------------------------------------------------------------------
  */
 static int
-mactable_vlan_show(const char *vlan_list, const char *mac_from)
+mactable_vlan_show(const char *vlan_list, const char *mac_from, bool show_count)
 {
     const struct ovsrec_mac *row = NULL;
     struct range_list *list_temp, *list = NULL;
@@ -288,7 +262,15 @@ mactable_vlan_show(const char *vlan_list, const char *mac_from)
     nodes = shash_sort(&sorted_mac_addr);
     count = shash_count(&sorted_mac_addr);
 
-    print_mactable(nodes, count);
+    if (show_count)
+    {
+        DISPLAY_MACTABLE_COUNT(count);
+    }
+    else
+    {
+        print_mactable(nodes, count);
+    }
+
     shash_destroy(&sorted_mac_addr);
     if (nodes != NULL)
         free(nodes);
@@ -308,7 +290,7 @@ mactable_vlan_show(const char *vlan_list, const char *mac_from)
  ------------------------------------------------------------------------------
  */
 static int
-mactable_port_show(const char *port_list, const char *mac_from)
+mactable_port_show(const char *port_list, const char *mac_from, bool show_count)
 {
     const struct ovsrec_mac *row = NULL;
     struct shash sorted_mac_addr;
@@ -362,7 +344,15 @@ mactable_port_show(const char *port_list, const char *mac_from)
     nodes = shash_sort(&sorted_mac_addr);
     count = shash_count(&sorted_mac_addr);
 
-    print_mactable(nodes, count);
+    if (show_count)
+    {
+        DISPLAY_MACTABLE_COUNT(count);
+    }
+    else
+    {
+        print_mactable(nodes, count);
+    }
+
     shash_destroy(&sorted_mac_addr);
     if (nodes != NULL)
         free(nodes);
@@ -378,7 +368,7 @@ DEFUN (cli_mactable_show,
        SHOW_MAC_TABLE_STR)
 {
 
-    return mactable_show(NULL, NULL);
+    return mactable_show(NULL, NULL, false);
 }
 
 DEFUN (cli_mactable_from_show,
@@ -386,12 +376,10 @@ DEFUN (cli_mactable_from_show,
        "show mac-address-table (dynamic)",
        SHOW_STR
        SHOW_MAC_TABLE_STR
-       SHOW_MAC_DYN_STR
-       SHOW_MAC_STATIC_STR
-       SHOW_MAC_HWVTEP_STR)
+       SHOW_MAC_DYN_STR)
 {
 
-    return mactable_show(argv[0], NULL);
+    return mactable_show(argv[0], NULL, false);
 }
 
 DEFUN (cli_mactable_vlan_show,
@@ -402,7 +390,7 @@ DEFUN (cli_mactable_vlan_show,
        SHOW_MAC_VLAN_STR
        MAC_VLAN_STR)
 {
-    return mactable_vlan_show(argv[0], NULL);
+    return mactable_vlan_show(argv[0], NULL, false);
 }
 
 DEFUN (cli_mactable_port_show,
@@ -414,7 +402,7 @@ DEFUN (cli_mactable_port_show,
        MAC_PORT_STR)
 {
 
-    return mactable_port_show(argv[0], NULL);
+    return mactable_port_show(argv[0], NULL, false);
 }
 
 
@@ -424,12 +412,10 @@ DEFUN (cli_mactable_from_vlan_show,
        SHOW_STR
        SHOW_MAC_TABLE_STR
        SHOW_MAC_DYN_STR
-       SHOW_MAC_STATIC_STR
-       SHOW_MAC_HWVTEP_STR
        SHOW_MAC_VLAN_STR
        MAC_VLAN_STR)
 {
-    return mactable_vlan_show(argv[1], argv[0]);
+    return mactable_vlan_show(argv[1], argv[0], false);
 }
 
 DEFUN (cli_mactable_from_port_show,
@@ -438,13 +424,11 @@ DEFUN (cli_mactable_from_port_show,
        SHOW_STR
        SHOW_MAC_TABLE_STR
        SHOW_MAC_DYN_STR
-       SHOW_MAC_STATIC_STR
-       SHOW_MAC_HWVTEP_STR
        SHOW_MAC_PORT_STR
        MAC_PORT_STR)
 {
 
-    return mactable_port_show(argv[1], argv[0]);
+    return mactable_port_show(argv[1], argv[0], false);
 }
 
 DEFUN (cli_mactable_address_show,
@@ -455,7 +439,7 @@ DEFUN (cli_mactable_address_show,
        SHOW_MAC_ADDR_STR
        "MAC address\n")
 {
-    return mactable_show(NULL, argv[0]);
+    return mactable_show(NULL, argv[0], false);
 }
 
 DEFUN (cli_mactable_count_show,
@@ -463,9 +447,44 @@ DEFUN (cli_mactable_count_show,
        "show mac-address-table count",
        SHOW_STR
        SHOW_MAC_TABLE_STR
-       "Number of MAC addresses\n")
+       MAC_COUNT_STR)
 {
-    return mactable_count_show();
+    return mactable_show(NULL, NULL, true);
+}
+
+DEFUN (cli_mactable_dyn_count_show,
+       cli_mactable_dyn_count_show_cmd,
+       "show mac-address-table count (dynamic)",
+       SHOW_STR
+       SHOW_MAC_TABLE_STR
+       MAC_COUNT_STR
+       SHOW_MAC_DYN_STR)
+{
+    return mactable_show(argv[0], NULL, true);
+}
+
+DEFUN (cli_mactable_vlan_count_show,
+       cli_mactable_vlan_count_show_cmd,
+       "show mac-address-table count vlan <A:1-4094>",
+       SHOW_STR
+       SHOW_MAC_TABLE_STR
+       MAC_COUNT_STR
+       SHOW_MAC_VLAN_STR
+       MAC_VLAN_STR)
+{
+    return mactable_vlan_show(argv[0], NULL, true);
+}
+
+DEFUN (cli_mactable_port_count_show,
+       cli_mactable_port_count_show_cmd,
+       "show mac-address-table count port PORTS",
+       SHOW_STR
+       SHOW_MAC_TABLE_STR
+       MAC_COUNT_STR
+       SHOW_MAC_PORT_STR
+       MAC_PORT_STR)
+{
+    return mactable_port_show(argv[0], NULL, true);
 }
 
 /* will be enabled after tunnel support is added */
@@ -508,7 +527,7 @@ mac_ovsdb_init(void)
         /* add indexing columns */
         ovsdb_idl_index_add_column(index, &ovsrec_mac_col_mac_addr,
                                           OVSDB_INDEX_ASC, ovsrec_mac_index_mac_addr_cmp);
-        ovsdb_idl_index_add_column(index, &ovsrec_mac_col_vlan,
+        ovsdb_idl_index_add_column(index, &ovsrec_mac_col_vlan,		
                                           OVSDB_INDEX_ASC, NULL);
         ovsdb_idl_index_add_column(index, &ovsrec_mac_col_from,
                                           OVSDB_INDEX_ASC, ovsrec_mac_index_from_cmp);
@@ -556,6 +575,9 @@ void cli_post_init(void)
     install_element (ENABLE_NODE, &cli_mactable_from_vlan_show_cmd);
     install_element (ENABLE_NODE, &cli_mactable_from_port_show_cmd);
     install_element (ENABLE_NODE, &cli_mactable_count_show_cmd);
+    install_element (ENABLE_NODE, &cli_mactable_dyn_count_show_cmd);
+    install_element (ENABLE_NODE, &cli_mactable_vlan_count_show_cmd);
+    install_element (ENABLE_NODE, &cli_mactable_port_count_show_cmd);
 #ifdef HW_VTEP_SUPPORT
     install_element (ENABLE_NODE, &cli_mactable_tunnel_show_cmd);
 #endif
