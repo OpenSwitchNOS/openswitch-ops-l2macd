@@ -97,7 +97,6 @@ def check_mac_learning(switch, vlan, mac1, mac2, p1, p2):
     return True
 
 
-@mark.skipif(True, reason="waiting for switchd code to get checked-in")
 @mark.platform_incompatible(['docker'])
 def test_maclearning(topology, step):
     """

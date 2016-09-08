@@ -75,6 +75,39 @@ print_mactable(const struct shash_node **nodes, int count)
     }
 
 }
+/*-----------------------------------------------------------------------------
+ | Function: mactable_count_show
+ | Responsibility: Display the number of mac entries in the mac table
+ | Parameters:
+ |      None
+
+ | Return:
+ |      CMD_SUCCESS - Command executed successfully.
+ ------------------------------------------------------------------------------
+*/
+static int
+mactable_count_show ()
+{
+    const struct ovsrec_mac *row = NULL;
+    int count = 0;
+
+    ovsdb_idl_run (idl);
+
+    row = ovsrec_mac_first (idl);
+    if (!row)
+    {
+        /* no mac entries in the mac table */
+        vty_out (vty, "No MAC entries found.%s", VTY_NEWLINE);
+        return CMD_SUCCESS;
+    }
+
+    OVSREC_MAC_FOR_EACH_BYINDEX (row, &cursor)
+    {
+        count++;
+    }
+    vty_out(vty, "Number of MAC addresses %d\n",count);
+    return CMD_SUCCESS;
+}
 
 /*-----------------------------------------------------------------------------
  | Function: mactable_show
@@ -519,7 +552,6 @@ mac_ovsdb_init(void)
     ovsdb_idl_add_column(idl, &ovsrec_mac_col_mac_addr);
     ovsdb_idl_add_column(idl, &ovsrec_mac_col_from);
     ovsdb_idl_add_column(idl, &ovsrec_mac_col_port);
-    ovsdb_idl_add_column(idl, &ovsrec_mac_col_tunnel_key);
 
     /* Initialize Compound Indexes */
     index = ovsdb_idl_create_index(idl, &ovsrec_table_mac, "by_macVidFrom");

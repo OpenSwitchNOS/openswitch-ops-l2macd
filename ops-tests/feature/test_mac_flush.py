@@ -271,7 +271,6 @@ def configure_hosts_and_ping(hs1, hs2):
     hs2.libs.ping.ping(10, '10.0.10.1')
 
 
-@mark.skipif(True, reason="waiting for switchd code to get checked-in")
 @mark.timeout(1500)
 @mark.platform_incompatible(['docker'])
 def test_mac_flush(topology):
